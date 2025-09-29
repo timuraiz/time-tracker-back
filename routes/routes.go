@@ -47,5 +47,16 @@ func SetupRoutes() *gin.Engine {
 		timeEntries.DELETE("/:id", handlers.DeleteTimeEntry)
 	}
 
+	// Project routes (requires authentication)
+	projects := api.Group("/projects")
+	projects.Use(middleware.SupabaseAuth()) // Apply authentication middleware
+	{
+		projects.POST("", handlers.CreateProject)
+		projects.GET("", handlers.GetProjects)
+		projects.GET("/:id", handlers.GetProject)
+		projects.PUT("/:id", handlers.UpdateProject)
+		projects.DELETE("/:id", handlers.DeleteProject)
+	}
+
 	return r
 }

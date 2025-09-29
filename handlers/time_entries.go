@@ -28,8 +28,7 @@ func CreateTimeEntry(c *gin.Context) {
 
 	timeEntry := models.TimeEntry{
 		UserID:      userID.(uuid.UUID),
-		ProjectName: req.ProjectName,
-		Description: req.Description,
+		ProjectID:   req.ProjectID,
 		StartTime:   time.Now(),
 	}
 
@@ -38,15 +37,32 @@ func CreateTimeEntry(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, models.TimeEntryResponse{
-		ID:          timeEntry.ID,
-		ProjectName: timeEntry.ProjectName,
-		Description: timeEntry.Description,
-		StartTime:   timeEntry.StartTime,
-		EndTime:     timeEntry.EndTime,
-		Duration:    timeEntry.Duration,
-		CreatedAt:   timeEntry.CreatedAt,
-	})
+	// Reload the time entry with project data
+	if err := database.DB.Preload("Project").First(&timeEntry, timeEntry.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch created time entry"})
+		return
+	}
+
+	response := models.TimeEntryResponse{
+		ID:        timeEntry.ID,
+		StartTime: timeEntry.StartTime,
+		EndTime:   timeEntry.EndTime,
+		Duration:  timeEntry.Duration,
+		CreatedAt: timeEntry.CreatedAt,
+	}
+
+	// Add project data if available
+	if timeEntry.Project != nil {
+		response.Project = &models.ProjectResponse{
+			ID:          timeEntry.Project.ID,
+			Name:        timeEntry.Project.Name,
+			Description: timeEntry.Project.Description,
+			Color:       timeEntry.Project.Color,
+			CreatedAt:   timeEntry.Project.CreatedAt,
+		}
+	}
+
+	c.JSON(http.StatusCreated, response)
 }
 
 func GetTimeEntries(c *gin.Context) {
@@ -88,7 +104,7 @@ func GetTimeEntries(c *gin.Context) {
 
 	// Get paginated time entries
 	var timeEntries []models.TimeEntry
-	if err := database.DB.Where("user_id = ?", userID).Order("created_at DESC").Limit(limit).Offset(offset).Find(&timeEntries).Error; err != nil {
+	if err := database.DB.Preload("Project").Where("user_id = ?", userID).Order("created_at DESC").Limit(limit).Offset(offset).Find(&timeEntries).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch time entries"})
 		return
 	}
@@ -96,15 +112,26 @@ func GetTimeEntries(c *gin.Context) {
 	// Convert to response format
 	var data []models.TimeEntryResponse
 	for _, entry := range timeEntries {
-		data = append(data, models.TimeEntryResponse{
-			ID:          entry.ID,
-			ProjectName: entry.ProjectName,
-			Description: entry.Description,
-			StartTime:   entry.StartTime,
-			EndTime:     entry.EndTime,
-			Duration:    entry.Duration,
-			CreatedAt:   entry.CreatedAt,
-		})
+		response := models.TimeEntryResponse{
+			ID:        entry.ID,
+			StartTime: entry.StartTime,
+			EndTime:   entry.EndTime,
+			Duration:  entry.Duration,
+			CreatedAt: entry.CreatedAt,
+		}
+
+		// Add project data if available
+		if entry.Project != nil {
+			response.Project = &models.ProjectResponse{
+				ID:          entry.Project.ID,
+				Name:        entry.Project.Name,
+				Description: entry.Project.Description,
+				Color:       entry.Project.Color,
+				CreatedAt:   entry.Project.CreatedAt,
+			}
+		}
+
+		data = append(data, response)
 	}
 
 	// Calculate total pages
@@ -137,20 +164,31 @@ func GetTimeEntry(c *gin.Context) {
 	}
 
 	var timeEntry models.TimeEntry
-	if err := database.DB.Where("id = ? AND user_id = ?", id, userID).First(&timeEntry).Error; err != nil {
+	if err := database.DB.Preload("Project").Where("id = ? AND user_id = ?", id, userID).First(&timeEntry).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Time entry not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, models.TimeEntryResponse{
-		ID:          timeEntry.ID,
-		ProjectName: timeEntry.ProjectName,
-		Description: timeEntry.Description,
-		StartTime:   timeEntry.StartTime,
-		EndTime:     timeEntry.EndTime,
-		Duration:    timeEntry.Duration,
-		CreatedAt:   timeEntry.CreatedAt,
-	})
+	response := models.TimeEntryResponse{
+		ID:        timeEntry.ID,
+		StartTime: timeEntry.StartTime,
+		EndTime:   timeEntry.EndTime,
+		Duration:  timeEntry.Duration,
+		CreatedAt: timeEntry.CreatedAt,
+	}
+
+	// Add project data if available
+	if timeEntry.Project != nil {
+		response.Project = &models.ProjectResponse{
+			ID:          timeEntry.Project.ID,
+			Name:        timeEntry.Project.Name,
+			Description: timeEntry.Project.Description,
+			Color:       timeEntry.Project.Color,
+			CreatedAt:   timeEntry.Project.CreatedAt,
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func UpdateTimeEntry(c *gin.Context) {
@@ -181,16 +219,18 @@ func UpdateTimeEntry(c *gin.Context) {
 	}
 
 	// Update fields
-	if req.ProjectName != "" {
-		timeEntry.ProjectName = req.ProjectName
-	}
-	if req.Description != "" {
-		timeEntry.Description = req.Description
+	if req.ProjectID != nil {
+		timeEntry.ProjectID = req.ProjectID
 	}
 	if req.EndTime != "" {
 		endTime, err := time.Parse(time.RFC3339, req.EndTime)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end time format"})
+			return
+		}
+		// Validate that end time is after start time
+		if endTime.Before(timeEntry.StartTime) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "End time cannot be before start time"})
 			return
 		}
 		timeEntry.EndTime = &endTime
@@ -202,15 +242,32 @@ func UpdateTimeEntry(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, models.TimeEntryResponse{
-		ID:          timeEntry.ID,
-		ProjectName: timeEntry.ProjectName,
-		Description: timeEntry.Description,
-		StartTime:   timeEntry.StartTime,
-		EndTime:     timeEntry.EndTime,
-		Duration:    timeEntry.Duration,
-		CreatedAt:   timeEntry.CreatedAt,
-	})
+	// Reload the time entry with project data
+	if err := database.DB.Preload("Project").First(&timeEntry, timeEntry.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch updated time entry"})
+		return
+	}
+
+	response := models.TimeEntryResponse{
+		ID:        timeEntry.ID,
+		StartTime: timeEntry.StartTime,
+		EndTime:   timeEntry.EndTime,
+		Duration:  timeEntry.Duration,
+		CreatedAt: timeEntry.CreatedAt,
+	}
+
+	// Add project data if available
+	if timeEntry.Project != nil {
+		response.Project = &models.ProjectResponse{
+			ID:          timeEntry.Project.ID,
+			Name:        timeEntry.Project.Name,
+			Description: timeEntry.Project.Description,
+			Color:       timeEntry.Project.Color,
+			CreatedAt:   timeEntry.Project.CreatedAt,
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func StopTimeEntry(c *gin.Context) {
@@ -248,15 +305,32 @@ func StopTimeEntry(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, models.TimeEntryResponse{
-		ID:          timeEntry.ID,
-		ProjectName: timeEntry.ProjectName,
-		Description: timeEntry.Description,
-		StartTime:   timeEntry.StartTime,
-		EndTime:     timeEntry.EndTime,
-		Duration:    timeEntry.Duration,
-		CreatedAt:   timeEntry.CreatedAt,
-	})
+	// Reload the time entry with project data
+	if err := database.DB.Preload("Project").First(&timeEntry, timeEntry.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch stopped time entry"})
+		return
+	}
+
+	response := models.TimeEntryResponse{
+		ID:        timeEntry.ID,
+		StartTime: timeEntry.StartTime,
+		EndTime:   timeEntry.EndTime,
+		Duration:  timeEntry.Duration,
+		CreatedAt: timeEntry.CreatedAt,
+	}
+
+	// Add project data if available
+	if timeEntry.Project != nil {
+		response.Project = &models.ProjectResponse{
+			ID:          timeEntry.Project.ID,
+			Name:        timeEntry.Project.Name,
+			Description: timeEntry.Project.Description,
+			Color:       timeEntry.Project.Color,
+			CreatedAt:   timeEntry.Project.CreatedAt,
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func DeleteTimeEntry(c *gin.Context) {

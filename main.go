@@ -20,6 +20,7 @@ func main() {
 	// Initialize Supabase client
 	supabase.InitClient()
 
+
 	// Connect to database
 	database.Connect()
 
