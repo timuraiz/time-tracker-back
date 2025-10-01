@@ -58,5 +58,15 @@ func SetupRoutes() *gin.Engine {
 		projects.DELETE("/:id", handlers.DeleteProject)
 	}
 
+	// Profile routes (requires authentication)
+	profile := api.Group("/profile")
+	profile.Use(middleware.SupabaseAuth()) // Apply authentication middleware
+	{
+		profile.POST("", handlers.CreateProfile)
+		profile.GET("", handlers.GetProfile)
+		profile.POST("/picture", handlers.UploadProfilePicture)
+		profile.DELETE("/picture", handlers.DeleteProfilePicture)
+	}
+
 	return r
 }

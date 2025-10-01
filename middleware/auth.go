@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -22,21 +23,27 @@ func SupabaseAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get token from Authorization header
 		authHeader := c.GetHeader("Authorization")
+		log.Println("HERE 1")
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+			log.Println("HERE", authHeader)
 			c.Abort()
 			return
 		}
+		log.Println("HERE 2")
 
 		// Extract token from "Bearer <token>"
 		tokenParts := strings.Split(authHeader, " ")
 		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+			log.Println("HERE 3")
+
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization header format"})
 			c.Abort()
 			return
 		}
 
 		tokenString := tokenParts[1]
+		log.Println("HERE 4")
 
 		// Simple approach: Use JWT secret for verification
 		jwtSecret := os.Getenv("JWT_SECRET")
@@ -66,6 +73,7 @@ func SupabaseAuth() gin.HandlerFunc {
 			c.Set("user_id", userID)
 			c.Set("user_email", claims.Email)
 			c.Set("user_role", claims.Role)
+			c.Set("access_token", tokenString)
 			c.Next()
 			return
 		}
@@ -94,10 +102,17 @@ func SupabaseAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		log.Println("HERE 5")
 
 		c.Set("user_id", userID)
+
+		log.Println(userID)
+		log.Println(claims.Email)
 		c.Set("user_email", claims.Email)
+		log.Println("HERE 6")
 		c.Set("user_role", claims.Role)
+		c.Set("access_token", tokenString)
+		log.Println("HERE 7")
 
 		c.Next()
 	}
