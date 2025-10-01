@@ -68,5 +68,8 @@ func SetupRoutes() *gin.Engine {
 		profile.DELETE("/picture", handlers.DeleteProfilePicture)
 	}
 
+	// Leaderboard route (requires authentication)
+	api.GET("/leaderboard", middleware.SupabaseAuth(), handlers.GetLeaderboard)
+
 	return r
 }
