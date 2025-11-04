@@ -26,9 +26,24 @@ func CreateTimeEntry(c *gin.Context) {
 		return
 	}
 
+	uid := userID.(uuid.UUID)
+	projectID := req.ProjectID
+
+	// If no project ID provided, use "General" project
+	if projectID == nil {
+		var generalProject models.Project
+		err := database.DB.Where("user_id = ? AND name = ?", uid, "General").First(&generalProject).Error
+
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "General project not found. Please create a profile first."})
+			return
+		}
+		projectID = &generalProject.ID
+	}
+
 	timeEntry := models.TimeEntry{
-		UserID:      userID.(uuid.UUID),
-		ProjectID:   req.ProjectID,
+		UserID:      uid,
+		ProjectID:   projectID,
 		StartTime:   time.Now(),
 	}
 

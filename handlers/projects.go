@@ -25,6 +25,12 @@ func CreateProject(c *gin.Context) {
 		return
 	}
 
+	// Validate project name - don't allow "General"
+	if req.Name == "General" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Project name 'General' is reserved"})
+		return
+	}
+
 	// Set default color if not provided
 	color := req.Color
 	if color == "" {
@@ -181,6 +187,11 @@ func UpdateProject(c *gin.Context) {
 
 	// Update fields
 	if req.Name != "" {
+		// Validate project name - don't allow "General"
+		if req.Name == "General" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Project name 'General' is reserved"})
+			return
+		}
 		project.Name = req.Name
 	}
 	if req.Description != "" {

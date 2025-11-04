@@ -51,6 +51,19 @@ func CreateProfile(c *gin.Context) {
 		return
 	}
 
+	// Create "General" project for the user
+	generalProject := models.Project{
+		UserID:      uid,
+		Name:        "General",
+		Description: "Default project for unassigned time entries",
+		Color:       "#3B82F6",
+	}
+
+	if err := database.DB.Create(&generalProject).Error; err != nil {
+		// Log error but don't fail profile creation
+		log.Printf("Failed to create general project for user %s: %v", uid, err)
+	}
+
 	c.JSON(http.StatusCreated, profile)
 }
 
